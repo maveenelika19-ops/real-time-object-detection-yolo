@@ -1,0 +1,42 @@
+# Python virtual environment
+.venv/
+venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# VS Code local settings
+.vscode/
+
+# Temporary files
+*.tmp
+*.log
+
+# Local backup
+app_backup.py
+
+# YOLO model weights
+*.pt
+
+# Uploaded and processed videos
+*.mp4
+*.avi
+*.mov
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Locally encrypted CCTV connection details (never commit these)
+data/cctv_cameras.json
+data/cctv_camera.key
+data/cctv_backup.key
+data/cctv_database.db
+data/known_faces/
+data/alert_history.csv
+data/location_alert_history.csv
+data/detection_history.csv
+data/database_errors.log
