@@ -1,3 +1,2 @@
-# Native Linux libraries required when OpenCV starts in Streamlit Community Cloud.
 libgl1
 libglib2.0-0
