@@ -2863,15 +2863,17 @@ elif option == "Face and Emotion Detection":
         if st.button("Detect Faces and Emotions"):
             image_array = np.array(face_image)
             gray_image = cv2.cvtColor(image_array, cv2.COLOR_RGB2GRAY)
-            face_detector = cv2.CascadeClassifier(
-    os.path.join(os.path.dirname(__file__), "haarcascade_frontalface_default.xml")
-)
-            faces = face_detector.detectMultiScale(
-                gray_image,
-                scaleFactor=1.1,
-                minNeighbors=10,
-                minSize=(60, 60),
-            )
+            face_detector = load_face_detector()
+            if face_detector.empty():
+                st.error("Face detector model is unavailable. Rebuild the app from the latest GitHub version.")
+                faces = []
+            else:
+                faces = face_detector.detectMultiScale(
+                    gray_image,
+                    scaleFactor=1.1,
+                    minNeighbors=10,
+                    minSize=(60, 60),
+                )
             annotated_image = image_array.copy()
             emotion_rows = []
 
