@@ -1074,6 +1074,19 @@ def load_face_detector():
     return cv2.CascadeClassifier(str(cascade_path))
 
 
+@st.cache_resource(show_spinner=False)
+def load_insightface_detector():
+    """Load the advanced local detector only when a basic detector needs help."""
+    from insightface.app import FaceAnalysis
+
+    detector = FaceAnalysis(
+        name="buffalo_l",
+        providers=["CPUExecutionProvider"],
+    )
+    detector.prepare(ctx_id=0, det_size=(640, 640))
+    return detector
+
+
 def load_known_faces():
     """Return locally enrolled face embeddings. No data is uploaded."""
     if not KNOWN_FACES_FILE.exists():
@@ -1202,10 +1215,30 @@ def detect_low_quality_faces(image_bgr):
         minNeighbors=3,
         minSize=(40, 40),
     )
-    return [
+    enlarged_faces = [
         (int(x / 2), int(y / 2), int(width / 2), int(height / 2))
         for x, y, width, height in faces
     ]
+    if enlarged_faces:
+        return enlarged_faces
+
+    # SCRFD/InsightFace is a stronger fallback for side-facing or low-detail
+    # faces. If its model cannot be loaded, preserve the fast local fallback.
+    try:
+        insightface_detector = load_insightface_detector()
+        insightface_faces = insightface_detector.get(image_bgr)
+        return [
+            (
+                int(face.bbox[0]),
+                int(face.bbox[1]),
+                int(face.bbox[2] - face.bbox[0]),
+                int(face.bbox[3] - face.bbox[1]),
+            )
+            for face in insightface_faces
+            if face.bbox[2] > face.bbox[0] and face.bbox[3] > face.bbox[1]
+        ]
+    except Exception:
+        return []
 
 
 def draw_face_locations(image_bgr, face_locations):

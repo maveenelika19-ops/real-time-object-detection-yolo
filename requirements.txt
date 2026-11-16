@@ -16,6 +16,9 @@ mediapipe>=0.10.14
 
 # Optional advanced face and emotion capabilities.
 deepface>=0.0.93
+# Advanced local face detector. InsightFace model packages download on first use.
+# Its supplied pretrained models are for non-commercial research by default.
+insightface==2.1
 # Keep these matched. TensorFlow 2.18 has Linux wheels for Python 3.11,
 # which is the selected Streamlit Community Cloud runtime.
 tensorflow==2.18.1
