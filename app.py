@@ -1170,7 +1170,7 @@ def recognize_known_faces_in_frame(image_bgr, known_faces, minimum_similarity=0.
     return annotated, matches
 
 
-def validate_registration_photo(image_bgr):
+def validate_registration_photo(image_bgr, allow_low_quality=False):
     """Return a clear reason when an enrollment photo is unsuitable for matching."""
     detector = load_face_detector()
     if detector.empty():
@@ -1191,12 +1191,12 @@ def validate_registration_photo(image_bgr):
         return "Move closer to the camera; the face is too small."
     face_crop = gray[faces[0][1]:faces[0][1] + height, faces[0][0]:faces[0][0] + width]
     brightness = float(face_crop.mean())
-    if brightness < 45:
+    if brightness < 45 and not allow_low_quality:
         return "The face is too dark; use better lighting."
-    if brightness > 225:
+    if brightness > 225 and not allow_low_quality:
         return "The face is too bright; avoid strong backlight or flash."
     sharpness = float(cv2.Laplacian(face_crop, cv2.CV_64F).var())
-    if sharpness < 55:
+    if sharpness < 55 and not allow_low_quality:
         return "The face is too blurry; use a sharper photo."
     return None
 
@@ -2521,6 +2521,12 @@ elif option == "Known Face Registration":
         key="registered_face_camera_photo",
         help="Use even lighting and keep one face close to the camera.",
     )
+    allow_low_quality_registration = st.checkbox(
+        "Accept low-light or slightly blurry photos when a face is visible",
+        value=True,
+        key="allow_low_quality_registration",
+        help="The photo is brightened automatically. Recognition accuracy may be lower for unclear photos.",
+    )
     if st.button("Register Known Face", type="primary"):
         registration_photos = list(registered_photos or [])
         if registered_camera_photo is not None:
@@ -2538,12 +2544,16 @@ elif option == "Known Face Registration":
                     if photo is None:
                         failed_files.append(f"{registered_photo.name} (unreadable file)")
                         continue
-                    quality_issue = validate_registration_photo(photo)
+                    photo_for_registration = enhance_low_light_image(photo)
+                    quality_issue = validate_registration_photo(
+                        photo_for_registration,
+                        allow_low_quality=allow_low_quality_registration,
+                    )
                     if quality_issue:
                         failed_files.append(f"{registered_photo.name} ({quality_issue})")
                         continue
                     try:
-                        embedding = face_embedding(photo, enforce_detection=True)
+                        embedding = face_embedding(photo_for_registration, enforce_detection=True)
                         known_faces.append({
                             "name": registered_name.strip(),
                             "embedding": embedding.tolist(),
