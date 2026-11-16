@@ -1097,6 +1097,20 @@ def load_known_faces():
         return []
 
 
+def insightface_embedding(image_bgr):
+    """Create a normalized InsightFace embedding for one visible face."""
+    detector = load_insightface_detector()
+    faces = detector.get(image_bgr)
+    if not faces:
+        raise ValueError("No usable face found by the advanced detector")
+    face = max(faces, key=lambda candidate: float(candidate.bbox[2] - candidate.bbox[0]) * float(candidate.bbox[3] - candidate.bbox[1]))
+    embedding = getattr(face, "normed_embedding", None)
+    if embedding is None:
+        embedding = np.asarray(face.embedding, dtype=np.float32)
+        embedding /= max(float(np.linalg.norm(embedding)), 1e-12)
+    return np.asarray(embedding, dtype=np.float32)
+
+
 def save_known_faces(faces):
     KNOWN_FACES_DIRECTORY.mkdir(parents=True, exist_ok=True)
     KNOWN_FACES_FILE.write_text(json.dumps(faces), encoding="utf-8")
@@ -1119,6 +1133,25 @@ def match_known_face(face_bgr, known_faces, minimum_similarity=0.72):
     """Match a detected face against locally registered people only."""
     if not known_faces:
         return None
+    # Prefer InsightFace profiles when both the detected face and registered
+    # profile have them. These embeddings are more tolerant of normal changes
+    # in lighting, pose, hairstyle, and expression.
+    try:
+        advanced_embedding = insightface_embedding(face_bgr)
+        best_advanced_match = None
+        best_advanced_score = -1.0
+        for known_face in known_faces:
+            reference = np.asarray(known_face.get("insightface_embedding", []), dtype=np.float32)
+            if reference.shape != advanced_embedding.shape or not reference.size:
+                continue
+            score = float(np.dot(advanced_embedding, reference) / max(float(np.linalg.norm(reference)), 1e-12))
+            if score > best_advanced_score:
+                best_advanced_match, best_advanced_score = known_face, score
+        if best_advanced_match and best_advanced_score >= 0.48:
+            return best_advanced_match["name"], best_advanced_score
+    except Exception:
+        pass
+
     try:
         # Align the face first. This produces more stable embeddings when the
         # person has changed hairstyle, facial expression, lighting, or angle.
@@ -2648,6 +2681,7 @@ elif option == "Known Face Registration":
         key="allow_low_quality_registration",
         help="The photo is brightened automatically. Recognition accuracy may be lower for unclear photos.",
     )
+    st.caption("For advanced InsightFace matching, register the person again after this update using 2–4 clear, consented photos.")
     if st.button("Register Known Face", type="primary"):
         registration_photos = list(registered_photos or [])
         if registered_camera_photo is not None:
@@ -2657,6 +2691,7 @@ elif option == "Known Face Registration":
         else:
             known_faces = load_known_faces()
             registered_count = 0
+            advanced_profile_count = 0
             failed_files = []
             with st.spinner("Creating local face match profiles..."):
                 for registered_photo in registration_photos:
@@ -2675,17 +2710,27 @@ elif option == "Known Face Registration":
                         continue
                     try:
                         embedding = face_embedding(photo_for_registration, enforce_detection=True)
-                        known_faces.append({
+                        profile = {
                             "name": registered_name.strip(),
                             "embedding": embedding.tolist(),
                             "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        })
+                        }
+                        try:
+                            advanced_embedding = insightface_embedding(photo_for_registration)
+                            profile["insightface_embedding"] = advanced_embedding.tolist()
+                            advanced_profile_count += 1
+                        except Exception:
+                            pass
+                        known_faces.append(profile)
                         registered_count += 1
                     except Exception:
                         failed_files.append(f"{registered_photo.name} (face profile could not be created)")
             if registered_count:
                 save_known_faces(known_faces)
-                st.success(f"Added {registered_count} face photo(s) for {registered_name.strip()}.")
+                st.success(
+                    f"Added {registered_count} face photo(s) for {registered_name.strip()}. "
+                    f"Advanced InsightFace profiles created: {advanced_profile_count}."
+                )
             if failed_files:
                 st.warning("Not registered: " + "; ".join(failed_files))
 
