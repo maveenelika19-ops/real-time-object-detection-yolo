@@ -1128,6 +1128,48 @@ def match_known_face(face_bgr, known_faces, minimum_similarity=0.72):
     return None
 
 
+def recognize_known_faces_in_frame(image_bgr, known_faces, minimum_similarity=0.72):
+    """Annotate consented, registered faces found in one image or video frame."""
+    if not known_faces:
+        return image_bgr, []
+
+    detector = load_face_detector()
+    if detector.empty():
+        return image_bgr, []
+
+    annotated = image_bgr.copy()
+    grayscale = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    faces = detector.detectMultiScale(
+        grayscale,
+        scaleFactor=1.1,
+        minNeighbors=8,
+        minSize=(60, 60),
+    )
+    matches = []
+    for x, y, width, height in faces:
+        face_crop = image_bgr[y:y + height, x:x + width]
+        match = match_known_face(face_crop, known_faces, minimum_similarity)
+        if not match:
+            continue
+        name, similarity = match
+        matches.append({
+            "Name": name,
+            "Similarity": round(similarity, 3),
+            "Face location": f"{x}, {y}",
+        })
+        cv2.rectangle(annotated, (x, y), (x + width, y + height), (0, 215, 255), 2)
+        cv2.putText(
+            annotated,
+            f"Known: {name} ({similarity:.0%})",
+            (x, max(22, y - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 215, 255),
+            2,
+        )
+    return annotated, matches
+
+
 def enhance_low_light_image(image_bgr):
     """Brighten dark face frames while preserving usable face detail."""
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
@@ -2272,6 +2314,15 @@ elif option == "Object Detection":
         "Choose an image",
         type=["jpg", "jpeg", "png"]
     )
+    known_faces_for_image = load_known_faces()
+    recognize_image_known_faces = st.checkbox(
+        "Recognize registered faces in this image",
+        key="image_known_face_recognition",
+        disabled=not known_faces_for_image,
+        help="Matches only people enrolled on the Known Face Registration page.",
+    )
+    if not known_faces_for_image:
+        st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
 
     if uploaded_file is not None:
 
@@ -2308,11 +2359,17 @@ elif option == "Object Detection":
                         verbose=False
                     )
 
-                    # Annotated image
-                    annotated_image = results[0].plot()
+                    # Annotated image and optional registered-face matching.
+                    annotated_bgr = results[0].plot()
+                    known_face_matches = []
+                    if recognize_image_known_faces:
+                        annotated_bgr, known_face_matches = recognize_known_faces_in_frame(
+                            annotated_bgr,
+                            known_faces_for_image,
+                        )
 
                     # Convert BGR to RGB
-                    annotated_image = annotated_image[:, :, ::-1]
+                    annotated_image = annotated_bgr[:, :, ::-1]
 
                     # Count detections
                     total_objects = len(results[0].boxes)
@@ -2345,6 +2402,12 @@ elif option == "Object Detection":
                 )
 
                 show_detection_details(results, class_names, source="Image Detection")
+                if recognize_image_known_faces:
+                    st.subheader("Registered Face Matches")
+                    if known_face_matches:
+                        st.dataframe(pd.DataFrame(known_face_matches), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No registered face was matched in this image.")
 # VEHICLE DETECTION PAGE
 elif option == "Vehicle Detection":
 
@@ -3521,6 +3584,23 @@ elif option == "Object Tracking":
             key="video_sound_alert",
             disabled=not video_alert_classes,
         )
+        known_faces_for_video = load_known_faces()
+        recognize_video_known_faces = st.checkbox(
+            "Recognize registered faces in this video",
+            key="video_known_face_recognition",
+            disabled=not known_faces_for_video,
+            help="Matches only people enrolled on the Known Face Registration page.",
+        )
+        video_face_check_interval = st.select_slider(
+            "Face matching frequency (frames)",
+            options=[15, 30, 60],
+            value=30,
+            key="video_face_check_interval",
+            disabled=not recognize_video_known_faces,
+            help="Checking fewer frames keeps video processing faster. 30 is recommended.",
+        )
+        if not known_faces_for_video:
+            st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
 
         if st.button("Start Object Tracking"):
 
@@ -3596,6 +3676,8 @@ elif option == "Object Tracking":
                             video_alert_events = []
                             video_alert_snapshot = None
                             video_alarm_played = False
+                            video_known_face_events = []
+                            video_known_face_snapshot = None
 
                             # Start tracking with a fresh tracker state
                             tracking_model = YOLO(model_paths[model_label])
@@ -3616,6 +3698,29 @@ elif option == "Object Tracking":
                                 )
 
                                 annotated_frame = results[0].plot()
+
+                                # Face embeddings are expensive, so only inspect frames with a
+                                # detected person at the chosen interval.
+                                person_in_frame = any(
+                                    model.names[int(box.cls[0])] == "person"
+                                    for box in results[0].boxes
+                                )
+                                if (
+                                    recognize_video_known_faces
+                                    and person_in_frame
+                                    and processed_frames % video_face_check_interval == 0
+                                ):
+                                    annotated_frame, frame_face_matches = recognize_known_faces_in_frame(
+                                        annotated_frame,
+                                        known_faces_for_video,
+                                    )
+                                    for face_match in frame_face_matches:
+                                        event = {"Frame": processed_frames + 1, **face_match}
+                                        video_known_face_events.append(event)
+                                    if frame_face_matches and video_known_face_snapshot is None:
+                                        encoded, snapshot = cv2.imencode(".png", annotated_frame)
+                                        if encoded:
+                                            video_known_face_snapshot = snapshot.tobytes()
 
                                 if tracking_snapshot is None:
                                     encoded, snapshot = cv2.imencode(".png", annotated_frame)
@@ -3722,6 +3827,25 @@ elif option == "Object Tracking":
                                 summary_two.metric("Unique Tracked Objects", len(unique_track_ids))
                                 summary_three.metric("Object Categories", len(tracked_category_counts))
                                 st.metric("Video Alert Events", len(video_alert_events))
+
+                                if recognize_video_known_faces:
+                                    st.metric("Registered Face Matches", len(video_known_face_events))
+                                    if video_known_face_events:
+                                        st.subheader("Registered Face Matches")
+                                        st.dataframe(
+                                            pd.DataFrame(video_known_face_events),
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
+                                        if video_known_face_snapshot:
+                                            st.download_button(
+                                                "Download First Known Face Match",
+                                                data=video_known_face_snapshot,
+                                                file_name="known_face_video_match.png",
+                                                mime="image/png",
+                                            )
+                                    else:
+                                        st.info("No registered face was matched in this video.")
 
                                 if video_alert_events:
                                     st.warning(f"Alert found: {', '.join(sorted(set(event['Object'] for event in video_alert_events)))}")
