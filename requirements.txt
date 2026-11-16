@@ -2,6 +2,8 @@
 # Avoid machine-specific packages from `pip freeze` (NVIDIA tools, Windows wheels, etc.).
 streamlit>=1.35,<2
 ultralytics>=8.3
+# ByteTrack's linear-assignment dependency; required for Object Tracking.
+lap>=0.5.12
 opencv-python-headless>=4.10,<5
 numpy>=1.26,<2.1
 pandas>=2.2
