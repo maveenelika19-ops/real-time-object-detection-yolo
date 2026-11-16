@@ -773,7 +773,7 @@ def send_camera_status_email_in_background(camera_name, status, location=""):
     Thread(target=send, daemon=True).start()
 
 
-def create_detection_pdf(results, class_names, annotated_image, report_title):
+def create_detection_pdf(results, class_names, annotated_image, report_title, known_face_matches=None):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
@@ -801,9 +801,11 @@ def create_detection_pdf(results, class_names, annotated_image, report_title):
         Spacer(1, 12),
     ]
 
+    known_face_matches = known_face_matches or []
     summary = [
         ["Total Objects", str(len(detection_table))],
         ["Object Categories", str(detection_table["Object"].nunique() if not detection_table.empty else 0)],
+        ["Known Face Matches", str(len(known_face_matches))],
         [
             "Highest Confidence",
             f"{detection_table['Confidence'].max():.0%}" if not detection_table.empty else "N/A",
@@ -841,6 +843,30 @@ def create_detection_pdf(results, class_names, annotated_image, report_title):
             ("PADDING", (0, 0), (-1, -1), 5),
         ]))
         story.append(details_table)
+
+    story.append(Spacer(1, 14))
+    story.append(Paragraph("Registered Face Matching", styles["Heading2"]))
+    if known_face_matches:
+        face_rows = [["Name", "Similarity", "Face Location"]]
+        for match in known_face_matches:
+            face_rows.append([
+                str(match.get("Name", "-")),
+                f"{float(match.get('Similarity', 0)):.0%}",
+                str(match.get("Face location", "-")),
+            ])
+        face_table = Table(face_rows, colWidths=[2.1 * inch, 1.3 * inch, 3.0 * inch])
+        face_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f4e78")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("PADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(face_table)
+    else:
+        story.append(Paragraph(
+            "No reliable registered-face match was found in this image.",
+            styles["Normal"],
+        ))
 
     document.build(story)
     return pdf_output.getvalue()
@@ -2605,6 +2631,7 @@ elif option == "Object Detection":
                         class_names,
                         annotated_image,
                         "Object Detection Report",
+                        known_face_matches=known_face_matches,
                     ),
                     file_name="object_detection_report.pdf",
                     mime="application/pdf",
@@ -2694,6 +2721,7 @@ elif option == "Vehicle Detection":
                     model.names,
                     annotated_image,
                     "Vehicle Detection Report",
+                        known_face_matches=vehicle_known_face_matches,
                 ),
                 file_name="vehicle_detection_report.pdf",
                 mime="application/pdf",
