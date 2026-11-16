@@ -3013,9 +3013,16 @@ elif option == "Facial Symmetry Scan":
                     min_face_detection_confidence=0.5,
                     min_face_presence_confidence=0.5,
                 )
-                scanner = mp.tasks.vision.FaceLandmarker.create_from_options(
-                    landmarker_options
-                )
+                try:
+                    scanner = mp.tasks.vision.FaceLandmarker.create_from_options(
+                        landmarker_options
+                    )
+                except (OSError, RuntimeError, AttributeError) as error:
+                    st.warning(
+                        "Facial symmetry scanning is unavailable in this cloud runtime. "
+                        f"Details: {type(error).__name__}. Use the local app for this optional feature."
+                    )
+                    st.stop()
                 scan_result = scanner.detect(
                     mp.Image(image_format=mp.ImageFormat.SRGB, data=image_array)
                 )
@@ -3118,9 +3125,16 @@ elif option == "3D Face Mesh and Head Pose":
                 min_face_presence_confidence=0.5,
                 min_tracking_confidence=0.5,
             )
-            face_landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(
-                landmarker_options
-            )
+            try:
+                face_landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(
+                    landmarker_options
+                )
+            except (OSError, RuntimeError, AttributeError) as error:
+                st.warning(
+                    "3D Face Mesh is unavailable in this cloud runtime. "
+                    f"Details: {type(error).__name__}. Use the local app for this optional feature."
+                )
+                st.stop()
             frame_timestamp = [0]
             outline_landmarks = [
                 10, 338, 297, 332, 284, 251, 389, 356, 454, 323,
