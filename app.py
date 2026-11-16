@@ -1106,10 +1106,10 @@ def load_insightface_detector():
     from insightface.app import FaceAnalysis
 
     detector = FaceAnalysis(
-        name="buffalo_l",
+        name="buffalo_s",
         providers=["CPUExecutionProvider"],
     )
-    detector.prepare(ctx_id=0, det_size=(640, 640))
+    detector.prepare(ctx_id=0, det_size=(320, 320))
     return detector
 
 
@@ -1167,6 +1167,8 @@ def match_known_face(face_bgr, known_faces, minimum_similarity=0.72):
         best_advanced_match = None
         best_advanced_score = -1.0
         for known_face in known_faces:
+            if known_face.get("insightface_model") != "buffalo_s":
+                continue
             reference = np.asarray(known_face.get("insightface_embedding", []), dtype=np.float32)
             if reference.shape != advanced_embedding.shape or not reference.size:
                 continue
@@ -1177,6 +1179,11 @@ def match_known_face(face_bgr, known_faces, minimum_similarity=0.72):
             return best_advanced_match["name"], best_advanced_score
     except Exception:
         pass
+
+    # The cloud build intentionally uses one lightweight engine. Older
+    # TensorFlow/DeepFace-only profiles must be re-enrolled after an upgrade.
+    if any(face.get("insightface_model") == "buffalo_s" for face in known_faces):
+        return None
 
     try:
         # Align the face first. This produces more stable embeddings when the
@@ -2787,19 +2794,18 @@ elif option == "Known Face Registration":
                         failed_files.append(f"{registered_photo.name} ({quality_issue})")
                         continue
                     try:
-                        embedding = face_embedding(photo_for_registration, enforce_detection=True)
+                        advanced_embedding = insightface_embedding(photo_for_registration)
                         profile = {
                             "name": registered_name.strip(),
-                            "embedding": embedding.tolist(),
+                            # `embedding` is retained for compatibility with the
+                            # registration summary; matching uses the named engine.
+                            "embedding": advanced_embedding.tolist(),
+                            "insightface_embedding": advanced_embedding.tolist(),
+                            "insightface_model": "buffalo_s",
                             "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         }
-                        try:
-                            advanced_embedding = insightface_embedding(photo_for_registration)
-                            profile["insightface_embedding"] = advanced_embedding.tolist()
-                            advanced_profile_count += 1
-                        except Exception:
-                            pass
                         known_faces.append(profile)
+                        advanced_profile_count += 1
                         registered_count += 1
                     except Exception:
                         failed_files.append(f"{registered_photo.name} (face profile could not be created)")
@@ -2816,7 +2822,7 @@ elif option == "Known Face Registration":
     st.subheader("Registered People")
     if known_faces:
         advanced_profile_count = sum(
-            bool(face.get("insightface_embedding")) for face in known_faces
+            face.get("insightface_model") == "buffalo_s" for face in known_faces
         )
         face_summary = pd.DataFrame(known_faces).groupby("name", as_index=False).agg(
             Photos=("embedding", "count"), Latest_registration=("registered_at", "max")
