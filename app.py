@@ -1106,7 +1106,7 @@ def load_insightface_detector():
     from insightface.app import FaceAnalysis
 
     detector = FaceAnalysis(
-        name="buffalo_sc",
+        name="buffalo_s",
         providers=["CPUExecutionProvider"],
     )
     detector.prepare(ctx_id=0, det_size=(320, 320))
@@ -1167,7 +1167,7 @@ def match_known_face(face_bgr, known_faces, minimum_similarity=0.72):
         best_advanced_match = None
         best_advanced_score = -1.0
         for known_face in known_faces:
-            if known_face.get("insightface_model") != "buffalo_sc":
+            if known_face.get("insightface_model") != "buffalo_s":
                 continue
             reference = np.asarray(known_face.get("insightface_embedding", []), dtype=np.float32)
             if reference.shape != advanced_embedding.shape or not reference.size:
@@ -1182,7 +1182,7 @@ def match_known_face(face_bgr, known_faces, minimum_similarity=0.72):
 
     # The cloud build intentionally uses one lightweight engine. Older
     # TensorFlow/DeepFace-only profiles must be re-enrolled after an upgrade.
-    if any(face.get("insightface_model") == "buffalo_sc" for face in known_faces):
+    if any(face.get("insightface_model") == "buffalo_s" for face in known_faces):
         return None
 
     try:
@@ -2550,7 +2550,7 @@ elif option == "Object Detection":
         st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
     detect_low_quality_faces_in_image = st.checkbox(
         "Detect small or blurry faces (no identity claim)",
-        value=False,
+        value=True,
         key="low_quality_face_detection_image",
         help="Marks a visible face location even when it is too unclear for reliable face recognition.",
     )
@@ -2801,7 +2801,7 @@ elif option == "Known Face Registration":
                             # registration summary; matching uses the named engine.
                             "embedding": advanced_embedding.tolist(),
                             "insightface_embedding": advanced_embedding.tolist(),
-                            "insightface_model": "buffalo_sc",
+                            "insightface_model": "buffalo_s",
                             "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         }
                         known_faces.append(profile)
@@ -2822,7 +2822,7 @@ elif option == "Known Face Registration":
     st.subheader("Registered People")
     if known_faces:
         advanced_profile_count = sum(
-            face.get("insightface_model") == "buffalo_sc" for face in known_faces
+            face.get("insightface_model") == "buffalo_s" for face in known_faces
         )
         face_summary = pd.DataFrame(known_faces).groupby("name", as_index=False).agg(
             Photos=("embedding", "count"), Latest_registration=("registered_at", "max")
@@ -3937,7 +3937,7 @@ elif option == "Object Tracking":
             st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
         capture_best_face_frame = st.checkbox(
             "Capture the clearest face frame for manual review",
-            value=False,
+            value=True,
             key="capture_best_face_frame",
             help="Periodically saves the largest, sharpest visible face frame from the uploaded video.",
         )

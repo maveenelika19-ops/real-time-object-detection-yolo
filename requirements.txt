@@ -14,8 +14,12 @@ reportlab>=4.0
 imageio-ffmpeg>=0.5
 streamlit-js-eval>=0.1.0
 streamlit-webrtc>=0.47.9
+mediapipe>=0.10.14
 
-# Lightweight advanced local face detector and matcher. Its model package
-# downloads on first use and is suitable for this academic demonstration.
+# Advanced local face detection, recognition, and emotion capabilities.
+deepface>=0.0.93
 # Its supplied pretrained models are for non-commercial research by default.
 insightface==2.1
+# Keep these matched for DeepFace emotion analysis on Python 3.11.
+tensorflow==2.18.1
+tf-keras==2.18.0
