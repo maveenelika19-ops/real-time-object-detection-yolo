@@ -2460,6 +2460,15 @@ elif option == "Vehicle Detection":
         type=["jpg", "jpeg", "png"],
         key="vehicle_image",
     )
+    known_faces_for_vehicle = load_known_faces()
+    recognize_vehicle_known_faces = st.checkbox(
+        "Recognize registered faces in this image",
+        key="vehicle_known_face_recognition",
+        disabled=not known_faces_for_vehicle,
+        help="Matches only people enrolled on the Known Face Registration page.",
+    )
+    if not known_faces_for_vehicle:
+        st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
 
     if vehicle_file is not None:
         vehicle_image = Image.open(vehicle_file).convert("RGB")
@@ -2479,7 +2488,14 @@ elif option == "Vehicle Detection":
                 verbose=False,
             )
             elapsed = time.perf_counter() - start_time
-            annotated_image = results[0].plot()[:, :, ::-1]
+            annotated_bgr = results[0].plot()
+            vehicle_known_face_matches = []
+            if recognize_vehicle_known_faces:
+                annotated_bgr, vehicle_known_face_matches = recognize_known_faces_in_frame(
+                    annotated_bgr,
+                    known_faces_for_vehicle,
+                )
+            annotated_image = annotated_bgr[:, :, ::-1]
 
             st.subheader("Vehicle Detection Result")
             st.image(annotated_image, channels="RGB", use_container_width=True)
@@ -2502,6 +2518,12 @@ elif option == "Vehicle Detection":
             )
             st.caption(f"Processed in {elapsed:.2f} seconds")
             show_detection_details(results, model.names, source="Vehicle Detection")
+            if recognize_vehicle_known_faces:
+                st.subheader("Registered Face Matches")
+                if vehicle_known_face_matches:
+                    st.dataframe(pd.DataFrame(vehicle_known_face_matches), use_container_width=True, hide_index=True)
+                else:
+                    st.info("No registered face was matched in this image.")
 
 # FACE AND EMOTION DETECTION PAGE
 elif option == "Known Face Registration":
