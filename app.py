@@ -1180,14 +1180,14 @@ def validate_registration_photo(image_bgr, allow_low_quality=False):
         gray,
         scaleFactor=1.1,
         minNeighbors=8,
-        minSize=(60, 60),
+        minSize=(35, 35) if allow_low_quality else (60, 60),
     )
     if len(faces) == 0:
         return "No clear face was found."
     if len(faces) > 1:
         return "Use a photo with only one face."
     _, _, width, height = faces[0]
-    if min(width, height) < 90:
+    if min(width, height) < 90 and not allow_low_quality:
         return "Move closer to the camera; the face is too small."
     face_crop = gray[faces[0][1]:faces[0][1] + height, faces[0][0]:faces[0][0] + width]
     brightness = float(face_crop.mean())
