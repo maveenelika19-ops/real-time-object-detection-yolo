@@ -1170,6 +1170,37 @@ def recognize_known_faces_in_frame(image_bgr, known_faces, minimum_similarity=0.
     return annotated, matches
 
 
+def validate_registration_photo(image_bgr):
+    """Return a clear reason when an enrollment photo is unsuitable for matching."""
+    detector = load_face_detector()
+    if detector.empty():
+        return "Face detector is unavailable."
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    faces = detector.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=8,
+        minSize=(60, 60),
+    )
+    if len(faces) == 0:
+        return "No clear face was found."
+    if len(faces) > 1:
+        return "Use a photo with only one face."
+    _, _, width, height = faces[0]
+    if min(width, height) < 90:
+        return "Move closer to the camera; the face is too small."
+    face_crop = gray[faces[0][1]:faces[0][1] + height, faces[0][0]:faces[0][0] + width]
+    brightness = float(face_crop.mean())
+    if brightness < 45:
+        return "The face is too dark; use better lighting."
+    if brightness > 225:
+        return "The face is too bright; avoid strong backlight or flash."
+    sharpness = float(cv2.Laplacian(face_crop, cv2.CV_64F).var())
+    if sharpness < 55:
+        return "The face is too blurry; use a sharper photo."
+    return None
+
+
 def enhance_low_light_image(image_bgr):
     """Brighten dark face frames while preserving usable face detail."""
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
@@ -2497,7 +2528,11 @@ elif option == "Known Face Registration":
                     photo_bytes = np.frombuffer(registered_photo.getvalue(), dtype=np.uint8)
                     photo = cv2.imdecode(photo_bytes, cv2.IMREAD_COLOR)
                     if photo is None:
-                        failed_files.append(registered_photo.name)
+                        failed_files.append(f"{registered_photo.name} (unreadable file)")
+                        continue
+                    quality_issue = validate_registration_photo(photo)
+                    if quality_issue:
+                        failed_files.append(f"{registered_photo.name} ({quality_issue})")
                         continue
                     try:
                         embedding = face_embedding(photo, enforce_detection=True)
@@ -2508,12 +2543,12 @@ elif option == "Known Face Registration":
                         })
                         registered_count += 1
                     except Exception:
-                        failed_files.append(registered_photo.name)
+                        failed_files.append(f"{registered_photo.name} (face profile could not be created)")
             if registered_count:
                 save_known_faces(known_faces)
                 st.success(f"Added {registered_count} face photo(s) for {registered_name.strip()}.")
             if failed_files:
-                st.warning("Could not register: " + ", ".join(failed_files) + ". Use clear photos with one visible face.")
+                st.warning("Not registered: " + "; ".join(failed_files))
 
     known_faces = load_known_faces()
     st.subheader("Registered People")
