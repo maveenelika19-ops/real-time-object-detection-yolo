@@ -2479,33 +2479,41 @@ elif option == "Known Face Registration":
         "Register only people who have agreed to be enrolled. Face photos and matching data stay in this project's local data folder."
     )
     registered_name = st.text_input("Person's name", key="registered_face_name")
-    registered_photo = st.file_uploader(
-        "Clear photo with one front-facing face",
+    registered_photos = st.file_uploader(
+        "Clear photos with one front-facing face (select 2–4 photos)",
         type=["jpg", "jpeg", "png"],
         key="registered_face_photo",
+        accept_multiple_files=True,
     )
     if st.button("Register Known Face", type="primary"):
-        if not registered_name.strip() or registered_photo is None:
-            st.warning("Enter a name and select one clear face photo.")
+        if not registered_name.strip() or not registered_photos:
+            st.warning("Enter a name and select at least one clear face photo.")
         else:
-            photo_bytes = np.frombuffer(registered_photo.getvalue(), dtype=np.uint8)
-            photo = cv2.imdecode(photo_bytes, cv2.IMREAD_COLOR)
-            if photo is None:
-                st.error("The selected file is not a readable image.")
-            else:
-                try:
-                    with st.spinner("Creating a local face match profile..."):
+            known_faces = load_known_faces()
+            registered_count = 0
+            failed_files = []
+            with st.spinner("Creating local face match profiles..."):
+                for registered_photo in registered_photos:
+                    photo_bytes = np.frombuffer(registered_photo.getvalue(), dtype=np.uint8)
+                    photo = cv2.imdecode(photo_bytes, cv2.IMREAD_COLOR)
+                    if photo is None:
+                        failed_files.append(registered_photo.name)
+                        continue
+                    try:
                         embedding = face_embedding(photo, enforce_detection=True)
-                    known_faces = load_known_faces()
-                    known_faces.append({
-                        "name": registered_name.strip(),
-                        "embedding": embedding.tolist(),
-                        "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    })
-                    save_known_faces(known_faces)
-                    st.success(f"Added a face photo for {registered_name.strip()}. Add 2–4 clear photos from different angles for better recognition.")
-                except Exception as error:
-                    st.error(f"Could not register this photo: {type(error).__name__}. Use a clearer photo with one visible face.")
+                        known_faces.append({
+                            "name": registered_name.strip(),
+                            "embedding": embedding.tolist(),
+                            "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        })
+                        registered_count += 1
+                    except Exception:
+                        failed_files.append(registered_photo.name)
+            if registered_count:
+                save_known_faces(known_faces)
+                st.success(f"Added {registered_count} face photo(s) for {registered_name.strip()}.")
+            if failed_files:
+                st.warning("Could not register: " + ", ".join(failed_files) + ". Use clear photos with one visible face.")
 
     known_faces = load_known_faces()
     st.subheader("Registered People")
