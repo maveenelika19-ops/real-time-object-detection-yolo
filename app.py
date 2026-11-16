@@ -2516,15 +2516,23 @@ elif option == "Known Face Registration":
         key="registered_face_photo",
         accept_multiple_files=True,
     )
+    registered_camera_photo = st.camera_input(
+        "Or take a clear face photo now",
+        key="registered_face_camera_photo",
+        help="Use even lighting and keep one face close to the camera.",
+    )
     if st.button("Register Known Face", type="primary"):
-        if not registered_name.strip() or not registered_photos:
-            st.warning("Enter a name and select at least one clear face photo.")
+        registration_photos = list(registered_photos or [])
+        if registered_camera_photo is not None:
+            registration_photos.append(registered_camera_photo)
+        if not registered_name.strip() or not registration_photos:
+            st.warning("Enter a name and select or take at least one clear face photo.")
         else:
             known_faces = load_known_faces()
             registered_count = 0
             failed_files = []
             with st.spinner("Creating local face match profiles..."):
-                for registered_photo in registered_photos:
+                for registered_photo in registration_photos:
                     photo_bytes = np.frombuffer(registered_photo.getvalue(), dtype=np.uint8)
                     photo = cv2.imdecode(photo_bytes, cv2.IMREAD_COLOR)
                     if photo is None:
