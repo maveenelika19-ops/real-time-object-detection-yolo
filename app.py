@@ -1095,6 +1095,7 @@ def show_detection_details(results, class_names, source=None):
     )
 
 
+@st.cache_resource(show_spinner=False)
 def load_face_detector():
     cascade_path = PROJECT_DIRECTORY / "models" / "haarcascade_frontalface_default.xml"
     return cv2.CascadeClassifier(str(cascade_path))
@@ -1303,23 +1304,7 @@ def detect_low_quality_faces(image_bgr):
     if enlarged_faces:
         return enlarged_faces
 
-    # SCRFD/InsightFace is a stronger fallback for side-facing or low-detail
-    # faces. If its model cannot be loaded, preserve the fast local fallback.
-    try:
-        insightface_detector = load_insightface_detector()
-        insightface_faces = insightface_detector.get(image_bgr)
-        return [
-            (
-                int(face.bbox[0]),
-                int(face.bbox[1]),
-                int(face.bbox[2] - face.bbox[0]),
-                int(face.bbox[3] - face.bbox[1]),
-            )
-            for face in insightface_faces
-            if face.bbox[2] > face.bbox[0] and face.bbox[3] > face.bbox[1]
-        ]
-    except Exception:
-        return []
+    return []
 
 
 def draw_face_locations(image_bgr, face_locations):
@@ -1527,7 +1512,6 @@ model_paths = {
     "YOLO11 Small (Balanced)": "yolo11s.pt",
     "YOLO11 Medium (Accurate)": "yolo11m.pt",
 }
-model = load_model(model_paths[model_label])
 
 option = st.sidebar.selectbox(
     "Select an option",
@@ -1553,6 +1537,20 @@ option = st.sidebar.selectbox(
         "Object Tracking",
     ]
 )
+
+# Do not occupy memory with YOLO while the user is only viewing records,
+# registering faces, or configuring settings.
+model = None
+model_required_pages = {
+    "Camera Test",
+    "Live Multi-CCTV Detection",
+    "Object Detection",
+    "Vehicle Detection",
+    "Live Webcam Detection",
+    "Object Tracking",
+}
+if option in model_required_pages:
+    model = load_model(model_paths[model_label])
 
 # HOME PAGE
 if option == "Home":
@@ -2549,7 +2547,7 @@ elif option == "Object Detection":
         st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
     detect_low_quality_faces_in_image = st.checkbox(
         "Detect small or blurry faces (no identity claim)",
-        value=True,
+        value=False,
         key="low_quality_face_detection_image",
         help="Marks a visible face location even when it is too unclear for reliable face recognition.",
     )
@@ -2962,6 +2960,13 @@ elif option == "3D Face Mesh and Head Pose":
         ["Full face mesh", "Face outline only"],
         key="mesh_detail",
     )
+    if not st.checkbox(
+        "Enable 3D face processing (uses extra memory)",
+        value=False,
+        key="enable_3d_face_processing",
+    ):
+        st.info("Enable 3D processing only when you are ready to use this feature.")
+        st.stop()
 
     try:
         import av
@@ -3811,7 +3816,7 @@ elif option == "Object Tracking":
             st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
         capture_best_face_frame = st.checkbox(
             "Capture the clearest face frame for manual review",
-            value=True,
+            value=False,
             key="capture_best_face_frame",
             help="Periodically saves the largest, sharpest visible face frame from the uploaded video.",
         )
@@ -3941,8 +3946,9 @@ elif option == "Object Tracking":
                                         annotated_image_bgr=annotated_frame,
                                     )
                                     for face_match in frame_face_matches:
-                                        event = {"Frame": processed_frames + 1, **face_match}
-                                        video_known_face_events.append(event)
+                                        if len(video_known_face_events) < 500:
+                                            event = {"Frame": processed_frames + 1, **face_match}
+                                            video_known_face_events.append(event)
                                     if frame_face_matches and video_known_face_snapshot is None:
                                         encoded, snapshot = cv2.imencode(".png", annotated_frame)
                                         if encoded:
@@ -3999,11 +4005,12 @@ elif option == "Object Tracking":
                                     if box.id is not None:
                                         unique_track_ids.add(int(box.id[0]))
                                     if class_name in video_alert_classes and confidence >= video_alert_confidence:
-                                        video_alert_events.append({
-                                            "Frame": processed_frames + 1,
-                                            "Object": class_name,
-                                            "Confidence": f"{confidence:.0%}",
-                                        })
+                                        if len(video_alert_events) < 2000:
+                                            video_alert_events.append({
+                                                "Frame": processed_frames + 1,
+                                                "Object": class_name,
+                                                "Confidence": f"{confidence:.0%}",
+                                            })
 
                                 frame_alerts = sorted({event["Object"] for event in video_alert_events if event["Frame"] == processed_frames + 1})
                                 if frame_alerts:
