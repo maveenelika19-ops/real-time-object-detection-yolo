@@ -2388,7 +2388,7 @@ elif option == "Live Multi-CCTV Detection":
                                 try:
                                     import winsound
                                     winsound.Beep(1000, 250)
-                                except RuntimeError:
+                                except (RuntimeError, ImportError):
                                     pass
                                 feed.last_sound_time = current_time
                             if current_time - feed.last_snapshot_time >= 5:
@@ -3630,7 +3630,7 @@ elif option == "Live Webcam Detection":
                             import winsound
 
                             winsound.Beep(1000, 250)
-                        except RuntimeError:
+                        except (RuntimeError, ImportError):
                             pass
                         last_sound_time[0] = current_time
                     if save_alert_snapshots and current_time - last_snapshot_time[0] >= 5:
@@ -4024,7 +4024,7 @@ elif option == "Object Tracking":
                                         try:
                                             import winsound
                                             winsound.Beep(1000, 350)
-                                        except RuntimeError:
+                                        except (RuntimeError, ImportError):
                                             pass
                                         video_alarm_played = True
 
