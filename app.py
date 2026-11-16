@@ -1177,6 +1177,54 @@ def recognize_known_faces_in_frame(image_bgr, known_faces, minimum_similarity=0.
     return annotated, matches
 
 
+def detect_low_quality_faces(image_bgr):
+    """Find visible faces in small or lower-quality images without identifying them."""
+    detector = load_face_detector()
+    if detector.empty():
+        return []
+    grayscale = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(grayscale)
+    faces = detector.detectMultiScale(
+        enhanced,
+        scaleFactor=1.1,
+        minNeighbors=5,
+        minSize=(35, 35),
+    )
+    if len(faces):
+        return [tuple(map(int, face)) for face in faces]
+
+    # Upscaling helps the detector see a small face, but a result remains a
+    # face location only — it is never used as an identity decision.
+    enlarged = cv2.resize(enhanced, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    faces = detector.detectMultiScale(
+        enlarged,
+        scaleFactor=1.1,
+        minNeighbors=3,
+        minSize=(40, 40),
+    )
+    return [
+        (int(x / 2), int(y / 2), int(width / 2), int(height / 2))
+        for x, y, width, height in faces
+    ]
+
+
+def draw_face_locations(image_bgr, face_locations):
+    """Draw non-identifying face locations on an already annotated image."""
+    annotated = image_bgr.copy()
+    for x, y, width, height in face_locations:
+        cv2.rectangle(annotated, (x, y), (x + width, y + height), (255, 170, 0), 2)
+        cv2.putText(
+            annotated,
+            "Face detected",
+            (x, min(annotated.shape[0] - 8, y + height + 20)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 170, 0),
+            2,
+        )
+    return annotated
+
+
 def validate_registration_photo(image_bgr, allow_low_quality=False):
     """Return a clear reason when an enrollment photo is unsuitable for matching."""
     detector = load_face_detector()
@@ -2361,6 +2409,12 @@ elif option == "Object Detection":
     )
     if not known_faces_for_image:
         st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
+    detect_low_quality_faces_in_image = st.checkbox(
+        "Detect small or blurry faces (no identity claim)",
+        value=True,
+        key="low_quality_face_detection_image",
+        help="Marks a visible face location even when it is too unclear for reliable face recognition.",
+    )
 
     if uploaded_file is not None:
 
@@ -2405,6 +2459,11 @@ elif option == "Object Detection":
                             annotated_bgr,
                             known_faces_for_image,
                         )
+                    low_quality_face_locations = []
+                    if detect_low_quality_faces_in_image:
+                        original_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+                        low_quality_face_locations = detect_low_quality_faces(original_bgr)
+                        annotated_bgr = draw_face_locations(annotated_bgr, low_quality_face_locations)
 
                     # Convert BGR to RGB
                     annotated_image = annotated_bgr[:, :, ::-1]
@@ -2440,6 +2499,8 @@ elif option == "Object Detection":
                 )
 
                 show_detection_details(results, class_names, source="Image Detection")
+                if detect_low_quality_faces_in_image:
+                    st.caption(f"Face locations detected: {len(low_quality_face_locations)}")
                 if recognize_image_known_faces:
                     st.subheader("Registered Face Matches")
                     if known_face_matches:
