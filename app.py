@@ -1107,9 +1107,16 @@ def match_known_face(face_bgr, known_faces, minimum_similarity=0.72):
     if not known_faces:
         return None
     try:
-        embedding = face_embedding(face_bgr, enforce_detection=False)
+        # Align the face first. This produces more stable embeddings when the
+        # person has changed hairstyle, facial expression, lighting, or angle.
+        embedding = face_embedding(face_bgr, enforce_detection=True)
     except Exception:
-        return None
+        try:
+            # A tightly cropped CCTV face may not be detected a second time;
+            # retain a local-only fallback for those frames.
+            embedding = face_embedding(face_bgr, enforce_detection=False)
+        except Exception:
+            return None
     embedding_norm = np.linalg.norm(embedding)
     if not embedding_norm:
         return None
