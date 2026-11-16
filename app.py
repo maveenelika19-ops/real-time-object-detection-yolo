@@ -1548,7 +1548,6 @@ option = st.sidebar.selectbox(
         "Vehicle Detection",
         "Face and Emotion Detection",
         "Known Face Registration",
-        "Facial Symmetry Scan",
         "3D Face Mesh and Head Pose",
         "Live Webcam Detection",
         "Object Tracking",
@@ -2948,131 +2947,6 @@ elif option == "Face and Emotion Detection":
                     st.warning(
                         "Face locations are available, but emotion estimates could not start: "
                         f"{deepface_error}"
-                    )
-
-# FACIAL SYMMETRY SCAN PAGE
-elif option == "Facial Symmetry Scan":
-
-    st.header("Facial Symmetry Scan")
-    st.write(
-        "Upload a clear, front-facing image. The scan compares paired facial "
-        "landmarks to show geometric left-right alignment."
-    )
-    symmetry_file = st.file_uploader(
-        "Choose a face image",
-        type=["jpg", "jpeg", "png"],
-        key="symmetry_image",
-    )
-
-    if symmetry_file is not None:
-        symmetry_image = Image.open(symmetry_file).convert("RGB")
-        show_zoomable_image(symmetry_image, "Uploaded image", "symmetry_image")
-
-        if st.button("Scan Facial Symmetry"):
-            try:
-                import mediapipe as mp
-            except ImportError:
-                st.warning(
-                    "Install the updated requirements to enable facial symmetry scanning: "
-                    "python -m pip install -r requirements.txt"
-                )
-            else:
-                image_array = np.array(symmetry_image)
-                paired_landmarks = [
-                    (33, 263),
-                    (133, 362),
-                    (234, 454),
-                    (61, 291),
-                    (172, 397),
-                ]
-                model_directory = PROJECT_DIRECTORY / "models"
-                face_model_path = model_directory / "face_landmarker.task"
-
-                if not face_model_path.exists():
-                    try:
-                        from urllib.request import urlretrieve
-
-                        model_directory.mkdir(exist_ok=True)
-                        with st.spinner("Downloading the Face Landmarker model..."):
-                            urlretrieve(
-                                "https://storage.googleapis.com/mediapipe-models/"
-                                "face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
-                                face_model_path,
-                            )
-                    except Exception as error:
-                        st.error(f"Unable to download the Face Landmarker model: {error}")
-
-                if not face_model_path.exists():
-                    st.stop()
-
-                base_options = mp.tasks.BaseOptions(model_asset_path=str(face_model_path))
-                landmarker_options = mp.tasks.vision.FaceLandmarkerOptions(
-                    base_options=base_options,
-                    running_mode=mp.tasks.vision.RunningMode.IMAGE,
-                    num_faces=1,
-                    min_face_detection_confidence=0.5,
-                    min_face_presence_confidence=0.5,
-                )
-                try:
-                    scanner = mp.tasks.vision.FaceLandmarker.create_from_options(
-                        landmarker_options
-                    )
-                except (OSError, RuntimeError, AttributeError) as error:
-                    st.warning(
-                        "Facial symmetry scanning is unavailable in this cloud runtime. "
-                        f"Details: {type(error).__name__}. Use the local app for this optional feature."
-                    )
-                    st.stop()
-                scan_result = scanner.detect(
-                    mp.Image(image_format=mp.ImageFormat.SRGB, data=image_array)
-                )
-                scanner.close()
-
-                if not scan_result.face_landmarks:
-                    st.info("No face was detected. Use a clear, front-facing image with good lighting.")
-                else:
-                    landmarks = scan_result.face_landmarks[0]
-                    image_height, image_width = image_array.shape[:2]
-                    points = [
-                        (int(point.x * image_width), int(point.y * image_height))
-                        for point in landmarks
-                    ]
-                    face_left = min(point[0] for point in points)
-                    face_right = max(point[0] for point in points)
-                    face_width = max(face_right - face_left, 1)
-                    center_x = points[1][0]
-                    annotated_image = image_array.copy()
-                    differences = []
-
-                    cv2.line(
-                        annotated_image,
-                        (center_x, 0),
-                        (center_x, image_height),
-                        (0, 255, 0),
-                        2,
-                    )
-                    for left_index, right_index in paired_landmarks:
-                        left_point = points[left_index]
-                        right_point = points[right_index]
-                        left_distance = center_x - left_point[0]
-                        right_distance = right_point[0] - center_x
-                        differences.append(abs(left_distance - right_distance) / face_width)
-                        cv2.circle(annotated_image, left_point, 4, (255, 0, 0), -1)
-                        cv2.circle(annotated_image, right_point, 4, (255, 0, 0), -1)
-                        cv2.line(annotated_image, left_point, right_point, (255, 255, 0), 1)
-
-                    average_difference = float(np.mean(differences))
-                    symmetry_score = max(0.0, min(100.0, (1 - average_difference / 0.20) * 100))
-
-                    st.subheader("Symmetry Scan Result")
-                    st.image(annotated_image, channels="RGB", use_container_width=True)
-                    score_column, difference_column = st.columns(2)
-                    score_column.metric("Geometric Symmetry Score", f"{symmetry_score:.1f}%")
-                    difference_column.metric("Average Landmark Difference", f"{average_difference:.3f}")
-                    st.caption(
-                        "The green line is the estimated facial center. Blue points are paired "
-                        "landmarks used for comparison. Head angle, expression, lens distortion, "
-                        "and lighting can change the score."
                     )
 
 # 3D FACE MESH AND HEAD POSE PAGE
