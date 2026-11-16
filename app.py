@@ -1220,6 +1220,26 @@ def recognize_known_faces_in_frame(
 
 def detect_low_quality_faces(image_bgr):
     """Find visible faces in small or lower-quality images without identifying them."""
+    # Prefer the advanced detector. It is more robust with profiles, angled
+    # faces, and cluttered scenes, and avoids many Haar-cascade false boxes.
+    try:
+        insightface_detector = load_insightface_detector()
+        insightface_faces = insightface_detector.get(image_bgr)
+        advanced_faces = [
+            (
+                int(face.bbox[0]),
+                int(face.bbox[1]),
+                int(face.bbox[2] - face.bbox[0]),
+                int(face.bbox[3] - face.bbox[1]),
+            )
+            for face in insightface_faces
+            if face.bbox[2] > face.bbox[0] and face.bbox[3] > face.bbox[1]
+        ]
+        if advanced_faces:
+            return advanced_faces
+    except Exception:
+        pass
+
     detector = load_face_detector()
     if detector.empty():
         return []
@@ -2737,6 +2757,9 @@ elif option == "Known Face Registration":
     known_faces = load_known_faces()
     st.subheader("Registered People")
     if known_faces:
+        advanced_profile_count = sum(
+            bool(face.get("insightface_embedding")) for face in known_faces
+        )
         face_summary = pd.DataFrame(known_faces).groupby("name", as_index=False).agg(
             Photos=("embedding", "count"), Latest_registration=("registered_at", "max")
         )
@@ -2745,6 +2768,10 @@ elif option == "Known Face Registration":
             use_container_width=True,
             hide_index=True,
         )
+        if advanced_profile_count:
+            st.caption(f"Advanced InsightFace profiles available: {advanced_profile_count}.")
+        else:
+            st.warning("These are older face profiles. Remove and re-register the person to enable advanced matching.")
         remove_name = st.selectbox("Remove a registered person", [face["name"] for face in known_faces])
         if st.button("Remove Selected Person"):
             save_known_faces([face for face in known_faces if face["name"] != remove_name])
