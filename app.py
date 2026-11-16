@@ -1306,6 +1306,31 @@ def draw_face_locations(image_bgr, face_locations):
     return annotated
 
 
+def select_face_locations_for_people(face_locations, results, class_names):
+    """Keep at most one plausible face in the upper part of each detected person."""
+    selected_locations = []
+    used_locations = set()
+    for box in results[0].boxes:
+        if class_names[int(box.cls[0])] != "person":
+            continue
+        left, top, right, bottom = map(float, box.xyxy[0].tolist())
+        person_height = max(bottom - top, 1.0)
+        candidates = []
+        for index, (x, y, width, height) in enumerate(face_locations):
+            center_x = x + width / 2
+            center_y = y + height / 2
+            # A face is expected in the upper 60% of its detected person box.
+            if left <= center_x <= right and top <= center_y <= top + person_height * 0.60:
+                candidates.append((index, x, y, width, height))
+        if candidates:
+            # Prefer the highest credible face rather than shirt/camera details.
+            index, x, y, width, height = min(candidates, key=lambda item: item[2])
+            if index not in used_locations:
+                selected_locations.append((x, y, width, height))
+                used_locations.add(index)
+    return selected_locations
+
+
 def validate_registration_photo(image_bgr, allow_low_quality=False):
     """Return a clear reason when an enrollment photo is unsuitable for matching."""
     detector = load_face_detector()
@@ -2545,6 +2570,11 @@ elif option == "Object Detection":
                     low_quality_face_locations = []
                     if detect_low_quality_faces_in_image:
                         low_quality_face_locations = detect_low_quality_faces(original_bgr)
+                        low_quality_face_locations = select_face_locations_for_people(
+                            low_quality_face_locations,
+                            results,
+                            class_names,
+                        )
                         annotated_bgr = draw_face_locations(annotated_bgr, low_quality_face_locations)
 
                     # Convert BGR to RGB
