@@ -3785,6 +3785,19 @@ elif option == "Object Tracking":
         )
         if not known_faces_for_video:
             st.caption("Register a consenting person on the Known Face Registration page to enable face matching.")
+        capture_best_face_frame = st.checkbox(
+            "Capture the clearest face frame for manual review",
+            value=True,
+            key="capture_best_face_frame",
+            help="Periodically saves the largest, sharpest visible face frame from the uploaded video.",
+        )
+        best_face_check_interval = st.select_slider(
+            "Best face scan frequency (frames)",
+            options=[15, 30, 60],
+            value=30,
+            key="best_face_check_interval",
+            disabled=not capture_best_face_frame,
+        )
 
         if st.button("Start Object Tracking"):
 
@@ -3862,6 +3875,10 @@ elif option == "Object Tracking":
                             video_alarm_played = False
                             video_known_face_events = []
                             video_known_face_snapshot = None
+                            best_face_frame = None
+                            best_face_crop = None
+                            best_face_score = -1.0
+                            best_face_details = None
 
                             # Start tracking with a fresh tracker state
                             tracking_model = YOLO(model_paths[model_label])
@@ -3905,6 +3922,44 @@ elif option == "Object Tracking":
                                         encoded, snapshot = cv2.imencode(".png", annotated_frame)
                                         if encoded:
                                             video_known_face_snapshot = snapshot.tobytes()
+
+                                if (
+                                    capture_best_face_frame
+                                    and processed_frames % best_face_check_interval == 0
+                                ):
+                                    face_locations = detect_low_quality_faces(frame)
+                                    if face_locations:
+                                        x, y, face_width, face_height = max(
+                                            face_locations,
+                                            key=lambda location: location[2] * location[3],
+                                        )
+                                        x = max(0, x)
+                                        y = max(0, y)
+                                        face_right = min(frame.shape[1], x + face_width)
+                                        face_bottom = min(frame.shape[0], y + face_height)
+                                        face_width = face_right - x
+                                        face_height = face_bottom - y
+                                        face_crop = frame[y:face_bottom, x:face_right]
+                                        if face_crop.size:
+                                            face_gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
+                                            sharpness = float(cv2.Laplacian(face_gray, cv2.CV_64F).var())
+                                            brightness = float(face_gray.mean())
+                                            exposure_score = max(0.15, 1.0 - abs(brightness - 128) / 128)
+                                            clarity_score = (
+                                                face_width * face_height
+                                                * min(sharpness, 500.0) / 500.0
+                                                * exposure_score
+                                            )
+                                            if clarity_score > best_face_score:
+                                                best_face_score = clarity_score
+                                                best_face_frame = frame.copy()
+                                                best_face_crop = face_crop.copy()
+                                                best_face_details = {
+                                                    "Frame": processed_frames + 1,
+                                                    "Face size": f"{face_width} x {face_height}",
+                                                    "Sharpness": round(sharpness, 1),
+                                                    "Brightness": round(brightness, 1),
+                                                }
 
                                 if tracking_snapshot is None:
                                     encoded, snapshot = cv2.imencode(".png", annotated_frame)
@@ -4053,6 +4108,38 @@ elif option == "Object Tracking":
                                         use_container_width=True,
                                         hide_index=True,
                                     )
+
+                                if capture_best_face_frame:
+                                    st.subheader("Best Face Frame Capture")
+                                    if best_face_frame is not None:
+                                        st.image(
+                                            cv2.cvtColor(best_face_frame, cv2.COLOR_BGR2RGB),
+                                            caption="Clearest detected face frame — review before acting on any match.",
+                                            use_container_width=True,
+                                        )
+                                        st.dataframe(
+                                            pd.DataFrame([best_face_details]),
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
+                                        encoded_frame, best_face_frame_png = cv2.imencode(".png", best_face_frame)
+                                        encoded_crop, best_face_crop_png = cv2.imencode(".png", best_face_crop)
+                                        if encoded_frame:
+                                            st.download_button(
+                                                "Download Best Face Frame",
+                                                data=best_face_frame_png.tobytes(),
+                                                file_name="best_face_frame.png",
+                                                mime="image/png",
+                                            )
+                                        if encoded_crop:
+                                            st.download_button(
+                                                "Download Best Face Crop",
+                                                data=best_face_crop_png.tobytes(),
+                                                file_name="best_face_crop.png",
+                                                mime="image/png",
+                                            )
+                                    else:
+                                        st.info("No visible face was found at the selected scan interval.")
 
                                 st.subheader("Tracked Video")
 
