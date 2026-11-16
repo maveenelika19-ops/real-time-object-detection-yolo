@@ -1148,23 +1148,18 @@ def match_known_face(face_bgr, known_faces, minimum_similarity=0.72):
     return None
 
 
-def recognize_known_faces_in_frame(image_bgr, known_faces, minimum_similarity=0.72):
+def recognize_known_faces_in_frame(
+    image_bgr,
+    known_faces,
+    minimum_similarity=0.72,
+    annotated_image_bgr=None,
+):
     """Annotate consented, registered faces found in one image or video frame."""
     if not known_faces:
-        return image_bgr, []
+        return annotated_image_bgr if annotated_image_bgr is not None else image_bgr, []
 
-    detector = load_face_detector()
-    if detector.empty():
-        return image_bgr, []
-
-    annotated = image_bgr.copy()
-    grayscale = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    faces = detector.detectMultiScale(
-        grayscale,
-        scaleFactor=1.1,
-        minNeighbors=8,
-        minSize=(60, 60),
-    )
+    annotated = annotated_image_bgr.copy() if annotated_image_bgr is not None else image_bgr.copy()
+    faces = detect_low_quality_faces(image_bgr)
     matches = []
     for x, y, width, height in faces:
         face_crop = image_bgr[y:y + height, x:x + width]
@@ -2486,15 +2481,16 @@ elif option == "Object Detection":
 
                     # Annotated image and optional registered-face matching.
                     annotated_bgr = results[0].plot()
+                    original_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
                     known_face_matches = []
                     if recognize_image_known_faces:
                         annotated_bgr, known_face_matches = recognize_known_faces_in_frame(
-                            annotated_bgr,
+                            original_bgr,
                             known_faces_for_image,
+                            annotated_image_bgr=annotated_bgr,
                         )
                     low_quality_face_locations = []
                     if detect_low_quality_faces_in_image:
-                        original_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
                         low_quality_face_locations = detect_low_quality_faces(original_bgr)
                         annotated_bgr = draw_face_locations(annotated_bgr, low_quality_face_locations)
 
@@ -2592,9 +2588,11 @@ elif option == "Vehicle Detection":
             annotated_bgr = results[0].plot()
             vehicle_known_face_matches = []
             if recognize_vehicle_known_faces:
+                vehicle_original_bgr = cv2.cvtColor(np.array(vehicle_image), cv2.COLOR_RGB2BGR)
                 annotated_bgr, vehicle_known_face_matches = recognize_known_faces_in_frame(
-                    annotated_bgr,
+                    vehicle_original_bgr,
                     known_faces_for_vehicle,
+                    annotated_image_bgr=annotated_bgr,
                 )
             annotated_image = annotated_bgr[:, :, ::-1]
 
@@ -3912,8 +3910,9 @@ elif option == "Object Tracking":
                                     and processed_frames % video_face_check_interval == 0
                                 ):
                                     annotated_frame, frame_face_matches = recognize_known_faces_in_frame(
-                                        annotated_frame,
+                                        frame,
                                         known_faces_for_video,
+                                        annotated_image_bgr=annotated_frame,
                                     )
                                     for face_match in frame_face_matches:
                                         event = {"Frame": processed_frames + 1, **face_match}
